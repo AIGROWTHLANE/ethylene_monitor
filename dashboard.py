@@ -26,22 +26,19 @@ ALERT_COOLDOWN_SECONDS = 1800  # 30 minutes
 # --------------------
 # Session State Init
 # --------------------
-if 'data' not in st.session_state:
-    st.session_state.data = {}
-
 if 'last_alert_time' not in st.session_state:
-    st.session_state.last_alert_time = {}
+    st.session_state.last_alert_time = None
 
 # --------------------
 # Send Email Function
 # --------------------
-def send_email_alert(station_id, ethylene_level):
+def send_email_alert(ethylene_level):
     if not SENDER_EMAIL or not SENDER_PASSWORD or not RECIPIENT_EMAIL:
         st.error("Email credentials are missing.")
         return
 
-    subject = f"High Ethylene Alert: Station {station_id}"
-    body = f"⚠️ Ethylene level is high ({ethylene_level} ppm) at Station {station_id}!"
+    subject = f"High Ethylene Alert"
+    body = f"⚠️ Ethylene level is high ({ethylene_level} ppm)!"
 
     msg = MIMEText(body)
     msg['Subject'] = subject
@@ -52,7 +49,7 @@ def send_email_alert(station_id, ethylene_level):
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
             server.login(SENDER_EMAIL, SENDER_PASSWORD)
             server.send_message(msg)
-            st.toast(f"Alert sent for Station {station_id}")
+            st.toast(f"Alert sent!")
     except Exception as e:
         st.error(f"Failed to send email: {e}")
 
@@ -93,41 +90,23 @@ if df.empty:
     st.warning("No data received yet.")
     st.stop()
 
-# --------------------
-# Safe group key
-# --------------------
-if 'station_id' in df.columns:
-    group_key = 'station_id'
-elif 'source' in df.columns:
-    group_key = 'source'
-else:
-    st.warning("No valid 'station_id' or 'source' column found for grouping.")
-    st.stop()
+df.sort_values('timestamp', inplace=True)
+latest = df.iloc[-1]
+ethylene = latest['ethylene_ppm']
+now = datetime.datetime.utcnow()
 
-if df[group_key].isnull().all():
-    st.warning(f"Column '{group_key}' has only null values. Nothing to group.")
-    st.stop()
+# Threshold Alert
+if ethylene > ETHYLENE_THRESHOLD:
+    last_alert = st.session_state.last_alert_time
+    if not last_alert or (now - last_alert).total_seconds() > ALERT_COOLDOWN_SECONDS:
+        send_email_alert(ethylene)
+        st.session_state.last_alert_time = now
 
-stations = df.groupby(df[group_key])
-
-for station, group in stations:
-    latest = group.sort_values('timestamp').iloc[-1]
-    ethylene = latest['ethylene_ppm']
-    color = "red" if ethylene > ETHYLENE_THRESHOLD else "green"
-
-    # Threshold Alert
-    now = datetime.datetime.utcnow()
-    last_alert = st.session_state.last_alert_time.get(station)
-    if ethylene > ETHYLENE_THRESHOLD and (not last_alert or (now - last_alert).total_seconds() > ALERT_COOLDOWN_SECONDS):
-        send_email_alert(station, ethylene)
-        st.session_state.last_alert_time[station] = now
-
-    # Display
-    st.subheader(f"Station: {station}")
-    st.metric("Current Ethylene Level (ppm)", f"{ethylene:.2f}", delta=None)
-    st.line_chart(group.set_index('timestamp')['ethylene_ppm'])
+# Display
+st.metric("Current Ethylene Level (ppm)", f"{ethylene:.2f}", delta=None)
+st.line_chart(df.set_index('timestamp')['ethylene_ppm'])
 
 # --------------------
-# Auto-refresh
+# Auto-refresh every minute
 # --------------------
 st.caption("Dashboard auto-refreshes every 60 seconds.")
