@@ -61,15 +61,28 @@ def send_email_alert(station_id, ethylene_level):
 # --------------------
 @st.cache_data(ttl=60)
 def load_data():
-    dynamodb = boto3.resource('dynamodb', region_name="us-east-1")
-    table = dynamodb.Table("EthyleneReadings")
-    response = table.scan()
-    return response['Items']
+    try:
+        dynamodb = boto3.resource('dynamodb', region_name="us-east-1")
+        table = dynamodb.Table("EthyleneReadings")
+        response = table.scan()
+        return response['Items']
+    except Exception as e:
+        st.error(f"❌ Error loading data from DynamoDB: {e}")
+        return []
 
 data = load_data()
 df = pd.DataFrame(data)
-df['timestamp'] = pd.to_datetime(df['timestamp'])
-df['ethylene_ppm'] = df['ethylene_ppm'].astype(float)
+
+# --------------------
+# Validate and preprocess data
+# --------------------
+if df.empty or 'timestamp' not in df.columns or 'ethylene_ppm' not in df.columns:
+    st.warning("No valid data available.")
+    st.stop()
+
+df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+df['ethylene_ppm'] = pd.to_numeric(df['ethylene_ppm'], errors='coerce')
+df.dropna(subset=['timestamp', 'ethylene_ppm'], inplace=True)
 
 # --------------------
 # UI Layout
@@ -80,8 +93,8 @@ if df.empty:
     st.warning("No data received yet.")
     st.stop()
 
-# Group by Station ID if available
-stations = df.groupby(df['station_id'] if 'station_id' in df.columns else 'source')
+group_key = 'station_id' if 'station_id' in df.columns else 'source'
+stations = df.groupby(df[group_key])
 
 for station, group in stations:
     latest = group.sort_values('timestamp').iloc[-1]
