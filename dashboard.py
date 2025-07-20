@@ -93,12 +93,27 @@ if df.empty:
     st.warning("No data received yet.")
     st.stop()
 
-group_key = 'station_id' if 'station_id' in df.columns else 'source'
+# --------------------
+# Safe group key
+# --------------------
+if 'station_id' in df.columns:
+    group_key = 'station_id'
+elif 'source' in df.columns:
+    group_key = 'source'
+else:
+    st.warning("No valid 'station_id' or 'source' column found for grouping.")
+    st.stop()
+
+if df[group_key].isnull().all():
+    st.warning(f"Column '{group_key}' has only null values. Nothing to group.")
+    st.stop()
+
 stations = df.groupby(df[group_key])
 
 for station, group in stations:
     latest = group.sort_values('timestamp').iloc[-1]
     ethylene = latest['ethylene_ppm']
+    color = "red" if ethylene > ETHYLENE_THRESHOLD else "green"
 
     # Threshold Alert
     now = datetime.datetime.utcnow()
@@ -109,10 +124,10 @@ for station, group in stations:
 
     # Display
     st.subheader(f"Station: {station}")
-    st.metric("Current Ethylene Level (ppm)", f"{ethylene:.2f}")
+    st.metric("Current Ethylene Level (ppm)", f"{ethylene:.2f}", delta=None)
     st.line_chart(group.set_index('timestamp')['ethylene_ppm'])
 
 # --------------------
-# Auto-refresh every minute
+# Auto-refresh
 # --------------------
 st.caption("Dashboard auto-refreshes every 60 seconds.")
