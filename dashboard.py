@@ -99,7 +99,6 @@ stations = df.groupby(df[group_key])
 for station, group in stations:
     latest = group.sort_values('timestamp').iloc[-1]
     ethylene = latest['ethylene_ppm']
-    color = "red" if ethylene > ETHYLENE_THRESHOLD else "green"
 
     # Threshold Alert
     now = datetime.datetime.utcnow()
@@ -110,7 +109,7 @@ for station, group in stations:
 
     # Display
     st.subheader(f"Station: {station}")
-    st.metric("Current Ethylene Level (ppm)", f"{ethylene:.2f}", delta=None)
+    st.metric("Current Ethylene Level (ppm)", f"{ethylene:.2f}")
     st.line_chart(group.set_index('timestamp')['ethylene_ppm'])
 
 # --------------------
